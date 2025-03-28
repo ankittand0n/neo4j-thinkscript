@@ -7,18 +7,20 @@ import { ChatInput } from './input';
 import { Message, ChatState } from '@/types/chat';
 import { sendMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { loadChatHistory, saveChatHistory, clearChatHistory } from '@/lib/storage';
+import { Trash2 } from 'lucide-react';
 
 interface ChatProps {
   initialState?: ChatState;
 }
 
 export function Chat({ initialState }: ChatProps) {
-  const [state, setState] = useState<ChatState>({
-    messages: [],
+  const [state, setState] = useState<ChatState>(() => ({
+    messages: loadChatHistory(),
     isLoading: false,
     error: null,
     ...initialState,
-  });
+  }));
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastFailedMessage = useRef<string | null>(null);
@@ -27,6 +29,11 @@ export function Chat({ initialState }: ChatProps) {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
+  }, [state.messages]);
+
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    saveChatHistory(state.messages);
   }, [state.messages]);
 
   const handleSend = async (content: string) => {
@@ -75,8 +82,28 @@ export function Chat({ initialState }: ChatProps) {
     }
   };
 
+  const handleClearHistory = () => {
+    clearChatHistory();
+    setState((prev: ChatState) => ({
+      ...prev,
+      messages: [],
+      error: null,
+    }));
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
+      <div className="flex justify-end p-2 border-b">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleClearHistory}
+          className="text-muted-foreground hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4 mr-2" />
+          Clear History
+        </Button>
+      </div>
       <div className="flex-1 min-h-0">
         <div ref={scrollRef} className="h-full overflow-y-auto p-4">
           <div className="space-y-4 pb-4">
