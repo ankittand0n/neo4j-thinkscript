@@ -32,8 +32,8 @@ export async function sendMessage(message: string): Promise<ChatResponse> {
       answer: data.content,
       sources: data.sources.map((source: any) => ({
         title: source.name,
-        content: source.type,
-        url: source.url,
+        content: source.content,
+        url: source.url || '',
       })),
     };
   } catch (error) {

@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 import json
 from datetime import datetime
 from pathlib import Path
+import os
 
 class ThinkScriptSpider(CrawlSpider):
     name = 'thinkscript'
@@ -20,7 +21,9 @@ class ThinkScriptSpider(CrawlSpider):
     def __init__(self, *args, **kwargs):
         super(ThinkScriptSpider, self).__init__(*args, **kwargs)
         self.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.data_dir = Path('data/crawls')
+        # Get the project root directory (3 levels up from spider.py)
+        self.project_root = Path(__file__).parent.parent.parent.parent
+        self.data_dir = self.project_root / 'data' / 'crawls'
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.output_file = self.data_dir / f'thinkscript_data_{self.timestamp}.json'
         self.items = []
