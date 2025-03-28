@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  neo4j:
+    image: neo4j:5.14.0
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASSWORD}
+      - NEO4J_server_memory_pagecache_size=${NEO4J_PAGECACHE_SIZE}
+      - NEO4J_server_memory_heap_initial__size=${NEO4J_HEAP_INITIAL_SIZE}
+      - NEO4J_server_memory_heap_max__size=${NEO4J_HEAP_MAX_SIZE}
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend/api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - NEO4J_URI=${NEO4J_URI}
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    volumes:
+      - ./backend/api/src:/app
+      - /app/venv
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  crawler:
+    build:
+      context: ./backend/crawler
+      dockerfile: Dockerfile
+    environment:
+      - NEO4J_URI=${NEO4J_URI}
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    volumes:
+      - ./backend/crawler/src:/app
+      - /app/venv
+    command: python main.py
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+      - NODE_ENV=development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
+    command: npm run dev
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_plugins:
+  neo4j_import: 
