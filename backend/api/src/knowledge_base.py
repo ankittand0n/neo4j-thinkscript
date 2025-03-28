@@ -5,15 +5,33 @@ from dotenv import load_dotenv
 import json
 import re
 
-load_dotenv()
+# Load environment variables from the specified .env file
+env_file = os.getenv("ENV_FILE", ".env")
+print(f"Loading environment from: {env_file}")
+load_dotenv(env_file)
+
+# Debug: Print environment variables
+print(f"NEO4J_URI: {os.getenv('NEO4J_URI')}")
+print(f"NEO4J_USER: {os.getenv('NEO4J_USER')}")
+print(f"OPENAI_API_KEY: {'set' if os.getenv('OPENAI_API_KEY') else 'not set'}")
 
 class ThinkScriptKnowledgeBase:
     def __init__(self):
+        neo4j_uri = os.getenv("NEO4J_URI", "neo4j://localhost:7687")
+        neo4j_user = os.getenv("NEO4J_USER", "neo4j")
+        neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
+        
+        print(f"Connecting to Neo4j at: {neo4j_uri}")
         self.driver = GraphDatabase.driver(
-            os.getenv("NEO4J_URI", "neo4j://localhost:7687"),
-            auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "password"))
+            neo4j_uri,
+            auth=(neo4j_user, neo4j_password)
         )
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is not set. Please check your .env file.")
+        
+        # Initialize OpenAI client with minimal configuration
+        self.client = OpenAI(api_key=api_key)
         self.setup_indexes()
 
     def close(self):
