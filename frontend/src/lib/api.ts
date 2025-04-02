@@ -1,45 +1,55 @@
-import { ChatResponse } from '@/types/chat';
+import { Message } from '@/types/chat';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-export async function sendMessage(message: string): Promise<ChatResponse> {
+export type AIModel = 'gpt-3.5-turbo' | 'gpt-4-turbo-preview';
+
+export async function sendMessage(
+  messages: Message[], 
+  onChunk: (chunk: string) => void,
+  model: AIModel = 'gpt-3.5-turbo'
+): Promise<void> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat`, {
+    const response = await fetch(`${API_URL}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: 'user',
-            content: message,
-          },
-        ],
-      }),
+      body: JSON.stringify({ messages, model }),
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(
-        errorData.detail || 
-        `Failed to send message: ${response.status} ${response.statusText}`
-      );
+      throw new Error('Failed to fetch');
     }
 
-    const data = await response.json();
-    return {
-      answer: data.content,
-      sources: data.sources.map((source: any) => ({
-        title: source.name,
-        content: source.content,
-        url: source.url || '',
-      })),
-    };
-  } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`API Error: ${error.message}`);
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No reader available');
     }
-    throw new Error('An unexpected error occurred while sending the message');
+
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = JSON.parse(line.slice(6));
+          if (data.error) {
+            throw new Error(data.error);
+          }
+          if (data.content) {
+            onChunk(data.content);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error sending message:', error);
+    throw error;
   }
 } 

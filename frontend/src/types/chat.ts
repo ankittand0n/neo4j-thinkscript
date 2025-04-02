@@ -1,7 +1,7 @@
 export interface Message {
   id: string;
-  content: string;
   role: 'user' | 'assistant';
+  content: string;
   timestamp: string;
 }
 
@@ -18,4 +18,18 @@ export interface ChatState {
   messages: Message[];
   isLoading: boolean;
   error: string | null;
+}
+
+export interface Subheading {
+  text: string;
+  hasBullet: boolean;
+  isNumbered: boolean;
+  number?: number;
+}
+
+export interface MessageContent {
+  text: string;
+  headings: string[];
+  subheadings: Subheading[];
+  codeBlocks: string[];
 } 

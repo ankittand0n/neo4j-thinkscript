@@ -4,6 +4,14 @@ from neo4j import GraphDatabase
 from dotenv import load_dotenv
 import json
 import re
+from typing import List, Dict, Any, Optional
+import time
+from datetime import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables from the specified .env file
 env_file = os.getenv("ENV_FILE", ".env")
@@ -126,58 +134,62 @@ class ThinkScriptKnowledgeBase:
             print(f"Found {len(nodes)} matches")
             return nodes
 
-    def generate_response(self, query: str, relevant_nodes: list) -> str:
-        try:
-            if not relevant_nodes:
-                return "I apologize, but I couldn't find any relevant information about ThinkScript in my knowledge base. Could you please try rephrasing your question or ask about a different aspect of ThinkScript?"
-
-            # Create context from relevant nodes
-            context = "\n\n".join([
-                f"Title: {node['name']}\nContent: {node['content']}"
-                for node in relevant_nodes
-            ])
-
-            # Generate response using OpenAI with timeout
-            response = self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """You are a helpful assistant that answers questions about ThinkScript programming language.
-                                    Your responses should be:
-                                    1. Clear and concise
-                                    2. Include code examples when relevant
-                                    3. Explain the key concepts
-                                    4. Provide step-by-step instructions when needed
-                                    5. Include any important warnings or considerations
-                                    
-                                    If you find multiple relevant pieces of information, combine them to provide a comprehensive answer.
-                                    If you're not sure about something, say so rather than making assumptions.
-                                    Always format code examples with proper indentation and comments."""
-                    },
-                    {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
-                ],
-                temperature=0.7,
-                max_tokens=1000,
-                timeout=30  # 30 second timeout
-            )
-
-            # Ensure we have a valid response
-            if not response or not response.choices:
-                return "I apologize, but I encountered an error while generating a response. Please try again."
-
-            # Get the response content
-            response_content = response.choices[0].message.content
+    def generate_response(
+        self,
+        messages: List[Dict[str, str]],
+        stream: bool = True,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        timeout: Optional[int] = None,
+        retries: Optional[int] = None,
+        model: str = "gpt-3.5-turbo"
+    ) -> Any:
+        """
+        Generate a response using OpenAI's API with streaming support.
+        
+        Args:
+            messages: List of message dictionaries with 'role' and 'content' keys
+            stream: Whether to stream the response
+            temperature: Temperature for response generation (0.0 to 1.0)
+            max_tokens: Maximum number of tokens to generate
+            timeout: Timeout in seconds (overrides default)
+            retries: Number of retries (overrides default)
+            model: The OpenAI model to use (e.g., "gpt-3.5-turbo" or "gpt-4-turbo-preview")
             
-            # Ensure the response is a string
-            if not isinstance(response_content, str):
-                return "I apologize, but I encountered an error while generating a response. Please try again."
-
-            return response_content
-
-        except Exception as e:
-            print(f"Error generating response: {str(e)}")
-            # Try to provide a more helpful error message
-            if "timeout" in str(e).lower():
-                return "I apologize, but the response is taking longer than expected. Please try your question again, or try breaking it down into smaller parts."
-            return "I apologize, but I encountered an error while generating a response. Please try again." 
+        Returns:
+            If streaming: Generator yielding response chunks
+            If not streaming: Complete response
+        """
+        # Use provided values or defaults
+        timeout = timeout or 30  # seconds
+        retries = retries or 3
+        
+        # Prepare request parameters
+        params = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": stream
+        }
+        
+        if max_tokens:
+            params["max_tokens"] = max_tokens
+            
+        # Add timeout to client
+        self.client.timeout = timeout
+        
+        # Try to generate response with retries
+        for attempt in range(retries):
+            try:
+                if stream:
+                    return self.client.chat.completions.create(**params)
+                else:
+                    response = self.client.chat.completions.create(**params)
+                    return response.choices[0].message.content
+                    
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1} failed: {str(e)}")
+                if attempt < retries - 1:
+                    time.sleep(1)
+                else:
+                    raise 

@@ -84,8 +84,17 @@ def main():
         loader.create_indexes()
         
         print("Loading data...")
-        data_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                                "src", "crawler", "thinkscript_crawler", "output", "thinkscript_data.json")
+        # Look for the most recent crawl file in the data/crawls directory
+        data_dir = "/app/data/crawls"
+        crawl_files = [f for f in os.listdir(data_dir) if f.startswith("thinkscript_data_") and f.endswith(".json")]
+        if not crawl_files:
+            raise FileNotFoundError("No crawl files found in /app/data/crawls")
+        
+        # Sort by timestamp in filename and get the most recent
+        latest_file = sorted(crawl_files)[-1]
+        data_file = os.path.join(data_dir, latest_file)
+        print(f"Using crawl file: {data_file}")
+        
         loader.load_data(data_file)
         
         print("\nData loading completed successfully!")

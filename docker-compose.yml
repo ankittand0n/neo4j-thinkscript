@@ -1,8 +1,25 @@
 version: '3.8'
 
 services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"  # Frontend
+      - "8000:8000"  # Backend
+    environment:
+      - NEO4J_URI=${NEO4J_URI}
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    networks:
+      - app-network
+
   neo4j:
-    image: neo4j:5.14.0
+    image: neo4j:5
     ports:
       - "7474:7474"  # HTTP
       - "7687:7687"  # Bolt
@@ -15,69 +32,20 @@ services:
       - neo4j_data:/data
       - neo4j_logs:/logs
       - neo4j_plugins:/plugins
-      - ./neo4j.conf:/conf/neo4j.conf
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:7474 || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  api:
-    build:
-      context: ./backend/api
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - NEO4J_URI=${NEO4J_URI}
-      - NEO4J_USER=${NEO4J_USER}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      neo4j:
-        condition: service_healthy
-    volumes:
-      - ./backend/api/src:/app
-      - /app/venv
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-
-  crawler:
-    build:
-      context: ./backend/crawler
-      dockerfile: Dockerfile
-    environment:
-      - NEO4J_URI=${NEO4J_URI}
-      - NEO4J_USER=${NEO4J_USER}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      neo4j:
-        condition: service_healthy
-    volumes:
-      - ./backend/crawler/src:/app
-      - /app/venv
-    command: python main.py
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
-      - NODE_ENV=development
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
-    depends_on:
-      - api
-    command: npm run dev
+      start_period: 30s
+    networks:
+      - app-network
 
 volumes:
   neo4j_data:
   neo4j_logs:
   neo4j_plugins:
-  neo4j_import: 
+
+networks:
+  app-network:
+    driver: bridge 
