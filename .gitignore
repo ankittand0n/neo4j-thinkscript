@@ -10,7 +10,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+backend/lib/
 lib64/
 parts/
 sdist/
@@ -49,6 +49,7 @@ yarn-error.log*
 # Project specific
 data/crawls/*
 !data/crawls/.gitkeep
+!data/crawls/thinkscript_data_20250328_132839.json
 *.log
 .coverage
 htmlcov/
