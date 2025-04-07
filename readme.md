@@ -139,6 +139,77 @@ The system processes queries through multiple stages:
    - Uses OpenAI for natural language generation
    - Streams response to frontend
 
+## Retrieval-Augmented Generation (RAG) Implementation
+
+Our application implements a sophisticated RAG pipeline that combines Neo4j's graph database capabilities with large language models (LLMs) to provide accurate and contextually relevant responses.
+
+### 1. Data Ingestion and Chunking
+
+1. **Document Processing**
+   - Raw documentation is split into semantic chunks
+   - Each chunk maintains context and relationships
+   - Chunks are stored in Neo4j with metadata
+   - Relationships between chunks preserve document structure
+
+2. **Embedding Generation**
+   - Text chunks are converted into vector embeddings
+   - Embeddings capture semantic meaning
+   - Stored alongside chunk data in Neo4j
+   - Enables semantic search capabilities
+
+### 2. Retrieval Process
+
+1. **Query Processing**
+   - User queries are analyzed for key concepts
+   - Query is converted to embedding for semantic search
+   - Context window is determined based on query complexity
+
+2. **Context Retrieval**
+   - Neo4j performs vector similarity search
+   - Retrieves most relevant chunks based on semantic similarity
+   - Maintains document structure through graph relationships
+   - Filters and ranks results based on relevance
+
+3. **Context Augmentation**
+   - Retrieved chunks are combined with query
+   - Additional context is added from related nodes
+   - Graph traversal ensures comprehensive context
+   - Context window is optimized for LLM input
+
+### 3. Generation Process
+
+1. **Prompt Engineering**
+   - System prompt defines response format
+   - Retrieved context is formatted for LLM consumption
+   - Query is integrated with context
+   - Instructions guide response generation
+
+2. **Model Selection**
+   - Supports multiple LLM providers (OpenAI, Anthropic)
+   - Model selection based on query complexity
+   - Configurable model parameters
+   - Fallback mechanisms for API failures
+
+3. **Response Generation**
+   - LLM generates response using augmented context
+   - Response is streamed to frontend
+   - Code blocks and formatting are preserved
+   - Citations and references are included
+
+### 4. Continuous Improvement
+
+1. **Feedback Loop**
+   - User interactions are logged
+   - Retrieval effectiveness is monitored
+   - Response quality is evaluated
+   - System performance is optimized
+
+2. **Data Updates**
+   - New documentation can be added
+   - Existing content can be updated
+   - Chunking strategy can be refined
+   - Embeddings can be regenerated
+
 ## Message Processing
 
 ### 1. Message Parsing
