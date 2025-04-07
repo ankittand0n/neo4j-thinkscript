@@ -1,5 +1,6 @@
 import os
 from openai import OpenAI
+from anthropic import Anthropic
 from neo4j import GraphDatabase
 from dotenv import load_dotenv
 import json
@@ -22,6 +23,7 @@ load_dotenv(env_file)
 print(f"NEO4J_URI: {os.getenv('NEO4J_URI')}")
 print(f"NEO4J_USER: {os.getenv('NEO4J_USER')}")
 print(f"OPENAI_API_KEY: {'set' if os.getenv('OPENAI_API_KEY') else 'not set'}")
+print(f"ANTHROPIC_API_KEY: {'set' if os.getenv('ANTHROPIC_API_KEY') else 'not set'}")
 
 class ThinkScriptKnowledgeBase:
     def __init__(self):
@@ -34,12 +36,21 @@ class ThinkScriptKnowledgeBase:
             neo4j_uri,
             auth=(neo4j_user, neo4j_password)
         )
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is not set. Please check your .env file.")
         
-        # Initialize OpenAI client with minimal configuration
-        self.client = OpenAI(api_key=api_key)
+        # Initialize OpenAI client
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if openai_api_key:
+            self.openai_client = OpenAI(api_key=openai_api_key)
+        else:
+            self.openai_client = None
+            
+        # Initialize Anthropic client
+        anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        if anthropic_api_key:
+            self.anthropic_client = Anthropic(api_key=anthropic_api_key)
+        else:
+            self.anthropic_client = None
+            
         self.setup_indexes()
 
     def close(self):
@@ -85,50 +96,49 @@ class ThinkScriptKnowledgeBase:
         print(f"\nSearching for: {query}")
         
         with self.driver.session() as session:
-            # Extract key technical terms from the query
-            technical_terms = {
-                'moving average': ['sma', 'moving average', 'ma'],
-                'crossover': ['cross', 'crossover', 'crosses'],
-                'strategy': ['strategy', 'strategies', 'trading'],
-                'indicator': ['indicator', 'study', 'plot'],
-                'signal': ['signal', 'buy', 'sell', 'order']
-            }
+            # First try exact title match
+            result = session.run("""
+                MATCH (n:Node)
+                WHERE n.title = $query
+                RETURN n.title as name, n.content as content
+                LIMIT 1
+            """, {"query": query})
             
-            # Build search conditions based on technical terms
-            search_terms = []
-            query_lower = query.lower()
-            for category, terms in technical_terms.items():
-                if any(term in query_lower for term in terms):
-                    search_terms.extend(terms)
+            exact_match = list(result)
+            if exact_match:
+                print("Found exact title match")
+                return [{
+                    'name': record['name'],
+                    'content': record['content']
+                } for record in exact_match]
             
-            if not search_terms:
-                search_terms = query_lower.split()
-            
-            # Create Cypher conditions for content search using fulltext index
-            search_conditions = []
-            for term in search_terms:
-                search_conditions.append(f"n.content CONTAINS toLower('{term}')")
-            
-            where_clause = " OR ".join(search_conditions)
-            
-            # Search with combined conditions using fulltext index
-            print("Searching with technical terms...")
-            result = session.run(f"""
-                MATCH (n:ContentChunk)
-                WHERE {where_clause}
-                WITH n
-                MATCH (n)<-[:HAS_CHUNK]-(parent:Node)
-                RETURN DISTINCT parent.title as name, collect(n.content) as chunks
+            # If no exact match, try fulltext search on both Node and ContentChunk
+            result = session.run("""
+                CALL db.index.fulltext.queryNodes("content_fulltext_index", $query)
+                YIELD node, score
+                WITH node, score
+                MATCH (node)
+                WHERE node:Node OR node:ContentChunk
+                WITH node, score
+                ORDER BY score DESC
                 LIMIT 5
-            """)
+                RETURN 
+                    CASE 
+                        WHEN node:Node THEN node.title
+                        ELSE [(node)<-[:HAS_CHUNK]-(parent:Node) | parent.title][0]
+                    END as name,
+                    CASE 
+                        WHEN node:Node THEN node.content
+                        ELSE node.content
+                    END as content,
+                    score
+            """, {"query": query})
             
             nodes = []
             for record in result:
-                # Combine chunks into full content
-                full_content = " ".join(record['chunks'])
                 nodes.append({
                     'name': record['name'],
-                    'content': full_content
+                    'content': record['content']
                 })
             
             print(f"Found {len(nodes)} matches")
@@ -145,26 +155,31 @@ class ThinkScriptKnowledgeBase:
         model: str = "gpt-3.5-turbo"
     ) -> Any:
         """
-        Generate a response using OpenAI's API with streaming support.
-        
-        Args:
-            messages: List of message dictionaries with 'role' and 'content' keys
-            stream: Whether to stream the response
-            temperature: Temperature for response generation (0.0 to 1.0)
-            max_tokens: Maximum number of tokens to generate
-            timeout: Timeout in seconds (overrides default)
-            retries: Number of retries (overrides default)
-            model: The OpenAI model to use (e.g., "gpt-3.5-turbo" or "gpt-4-turbo-preview")
-            
-        Returns:
-            If streaming: Generator yielding response chunks
-            If not streaming: Complete response
+        Generate a response using either OpenAI or Anthropic API with streaming support.
         """
         # Use provided values or defaults
         timeout = timeout or 30  # seconds
         retries = retries or 3
         
-        # Prepare request parameters
+        # Determine which API to use based on model
+        if model.startswith('claude'):
+            if not self.anthropic_client:
+                raise ValueError("Anthropic API key not configured")
+            return self._generate_claude_response(messages, stream, temperature, max_tokens, model)
+        else:
+            if not self.openai_client:
+                raise ValueError("OpenAI API key not configured")
+            return self._generate_openai_response(messages, stream, temperature, max_tokens, model)
+
+    def _generate_openai_response(
+        self,
+        messages: List[Dict[str, str]],
+        stream: bool,
+        temperature: float,
+        max_tokens: Optional[int],
+        model: str
+    ) -> Any:
+        """Generate response using OpenAI API"""
         params = {
             "model": model,
             "messages": messages,
@@ -175,21 +190,66 @@ class ThinkScriptKnowledgeBase:
         if max_tokens:
             params["max_tokens"] = max_tokens
             
-        # Add timeout to client
-        self.client.timeout = timeout
+        self.openai_client.timeout = 30
         
-        # Try to generate response with retries
-        for attempt in range(retries):
+        for attempt in range(3):
             try:
                 if stream:
-                    return self.client.chat.completions.create(**params)
+                    return self.openai_client.chat.completions.create(**params)
                 else:
-                    response = self.client.chat.completions.create(**params)
+                    response = self.openai_client.chat.completions.create(**params)
                     return response.choices[0].message.content
-                    
             except Exception as e:
                 logger.error(f"Attempt {attempt + 1} failed: {str(e)}")
-                if attempt < retries - 1:
+                if attempt < 2:
+                    time.sleep(1)
+                else:
+                    raise
+
+    def _generate_claude_response(
+        self,
+        messages: List[Dict[str, str]],
+        stream: bool,
+        temperature: float,
+        max_tokens: Optional[int],
+        model: str
+    ) -> Any:
+        """Generate response using Anthropic API"""
+        # Convert messages to Anthropic format
+        system_message = next((msg for msg in messages if msg["role"] == "system"), None)
+        user_messages = [msg for msg in messages if msg["role"] == "user"]
+        assistant_messages = [msg for msg in messages if msg["role"] == "assistant"]
+        
+        # Combine messages into conversation
+        conversation = []
+        for user_msg, assistant_msg in zip(user_messages, assistant_messages):
+            conversation.append({"role": "user", "content": user_msg["content"]})
+            if assistant_msg:
+                conversation.append({"role": "assistant", "content": assistant_msg["content"]})
+        
+        params = {
+            "model": model,
+            "messages": conversation,
+            "temperature": temperature,
+            "stream": stream
+        }
+        
+        if max_tokens:
+            params["max_tokens"] = max_tokens
+            
+        if system_message:
+            params["system"] = system_message["content"]
+            
+        for attempt in range(3):
+            try:
+                if stream:
+                    return self.anthropic_client.messages.stream(**params)
+                else:
+                    response = self.anthropic_client.messages.create(**params)
+                    return response.content[0].text
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1} failed: {str(e)}")
+                if attempt < 2:
                     time.sleep(1)
                 else:
                     raise 

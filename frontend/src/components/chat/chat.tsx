@@ -166,6 +166,8 @@ export function Chat({ initialState }: ChatProps) {
           <SelectContent>
             <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo (Fast)</SelectItem>
             <SelectItem value="gpt-4-turbo-preview">GPT-4 Turbo (More Capable)</SelectItem>
+            <SelectItem value="claude-3-sonnet">Claude 3 Sonnet (Balanced)</SelectItem>
+            <SelectItem value="claude-3-opus">Claude 3 Opus (Most Capable)</SelectItem>
           </SelectContent>
         </Select>
         <Button

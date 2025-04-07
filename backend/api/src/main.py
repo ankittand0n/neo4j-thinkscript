@@ -35,7 +35,7 @@ async def root():
 
 async def stream_response(messages, model: str):
     try:
-        # Convert messages to the format expected by OpenAI
+        # Convert messages to the format expected by the API
         formatted_messages = [
             {"role": msg.role, "content": msg.content}
             for msg in messages
@@ -67,9 +67,14 @@ async def stream_response(messages, model: str):
         )
         
         # Stream the response
-        for chunk in response:
-            if chunk.choices[0].delta.content is not None:
-                yield f"data: {json.dumps({'content': chunk.choices[0].delta.content})}\n\n"
+        if model.startswith('claude'):
+            async for chunk in response:
+                if chunk.type == 'content_block_delta':
+                    yield f"data: {json.dumps({'content': chunk.delta.text})}\n\n"
+        else:
+            for chunk in response:
+                if chunk.choices[0].delta.content is not None:
+                    yield f"data: {json.dumps({'content': chunk.choices[0].delta.content})}\n\n"
                 
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"

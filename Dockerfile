@@ -24,8 +24,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy backend files
-COPY --from=backend-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+# Copy backend files and install dependencies
+COPY backend/api/src/requirements.txt ./backend/
+RUN pip install --no-cache-dir -r ./backend/requirements.txt
 COPY backend/api/src/ ./backend/
 
 # Copy frontend build
